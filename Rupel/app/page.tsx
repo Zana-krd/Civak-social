@@ -219,6 +219,32 @@ export default function Home() {
   const [feedMode, setFeedMode] = useState<'all' | 'following'>('all');
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [uploadingPostImage, setUploadingPostImage] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const uploadImageToBucket = async (fileObj: File, folder: "posts" | "avatars"): Promise<string> => {
+    if (!fileObj.type.startsWith("image/")) {
+      throw new Error("Please select a valid image file.");
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (fileObj.size > maxBytes) {
+      throw new Error("Image size must be 5MB or less.");
+    }
+    const ext = (fileObj.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const uidPart = user?.id || "anon";
+    const filePath = `${folder}/${uidPart}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext || "jpg"}`;
+    const { error: uploadError } = await supabase.storage
+      .from("media")
+      .upload(filePath, fileObj, { cacheControl: "3600", upsert: false });
+    if (uploadError) {
+      throw uploadError;
+    }
+    const { data: pubData } = supabase.storage.from("media").getPublicUrl(filePath);
+    if (!pubData?.publicUrl) {
+      throw new Error("Could not get public image URL.");
+    }
+    return pubData.publicUrl;
+  };
   const [showImageInput, setShowImageInput] = useState(false);
   const [selectedTag, setSelectedTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -264,7 +290,10 @@ export default function Home() {
       const saved = sessionStorage.getItem("rupel_viewed_author");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.handle) setViewedAuthorState(parsed);
+        if (parsed && parsed.handle) {
+          setViewedAuthorState(parsed);
+          setActiveSection("profile");
+        }
       }
     } catch {}
   }, []);
@@ -426,8 +455,10 @@ export default function Home() {
   ) => {
     const actor = normHandle(item.actorHandle || myHandle);
     const target = normHandle(item.targetHandle);
-    const optimistic: NotificationItem & { recipientId?: string; actorId?: string } = {
+      const optimistic: NotificationItem & { recipientId?: string | null; actorId?: string | null } = {
       ...item,
+        recipientId: item.recipientId ?? undefined,
+        actorId: item.actorId ?? undefined,
       actorHandle: actor,
       targetHandle: target,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1979,7 +2010,8 @@ export default function Home() {
                   dir={lang === 'so' ? 'rtl' : 'ltr'}
                 />
                 {showImageInput && (
-                  <input
+                  <>
+              <input
                     type="url"
                     value={imageUrl}
                     onChange={(e) => setImageUrl(e.target.value)}
@@ -1987,6 +2019,41 @@ export default function Home() {
                     className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 mb-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
                     dir="ltr"
                   />
+              <div className="mb-3 flex items-center gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-amber-400 transition">
+                  <span>{uploadingPostImage ? "..." : "Upload from device"}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingPostImage}
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      try {
+                        setUploadingPostImage(true);
+                        const url = await uploadImageToBucket(f, "posts");
+                        setImageUrl(url);
+                      } catch (err: any) {
+                        alert((dict.error || "Error: ") + (err?.message || String(err)));
+                      } finally {
+                        setUploadingPostImage(false);
+                      }
+                    }}
+                  />
+                </label>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="text-xs text-gray-400 hover:text-red-400"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </>
                 )}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-800">
                   <div className="flex items-center gap-3">
@@ -2241,6 +2308,31 @@ export default function Home() {
                       className="w-full bg-gray-950 border border-gray-800 rounded-xl p-2.5 text-white text-sm focus:outline-none focus:border-amber-500"
                       dir="ltr"
                     />
+              <div className="mt-2 flex items-center gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-amber-400 transition">
+                  <span>{uploadingAvatar ? "..." : "Upload avatar from device"}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAvatar}
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      try {
+                        setUploadingAvatar(true);
+                        const url = await uploadImageToBucket(f, "avatars");
+                        setAvatarUrl(url);
+                      } catch (err: any) {
+                        alert((dict.error || "Error: ") + (err?.message || String(err)));
+                      } finally {
+                        setUploadingAvatar(false);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
                   </div>
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">
