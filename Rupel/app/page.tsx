@@ -96,6 +96,9 @@ const t = {
     bioLabel: 'Jînenîgarî (Bio)',
     locationLabel: 'Cih',
     avatarLabel: 'Lînka Wêneyê Profîlê (Avatar URL)',
+    uploadPostImage: 'Wêneyî ji cîhazê bar bike',
+    uploadAvatarImage: 'Wêneyê profilê ji cîhazê bar bike',
+    uploadingLabel: 'Tê barkirin...',
     cancel: 'Betal bike',
     save: 'Tomar bike',
     deleteConfirm: 'Tu dixwazî vê postê jê bibî?',
@@ -166,6 +169,9 @@ const t = {
     bioLabel: 'ژیاننامە (Bio)',
     locationLabel: 'شوێن',
     avatarLabel: 'بەستەری وێنەی پڕۆفایل (Avatar URL)',
+    uploadPostImage: 'وێنە لە ئامێرەکەوە بار بکە',
+    uploadAvatarImage: 'وێنەی پڕۆفایل لە ئامێرەکەوە بار بکە',
+    uploadingLabel: 'بار دەکرێت...',
     cancel: 'هەڵوەشاندنەوە',
     save: 'پاشەکەوتکردن',
     deleteConfirm: 'دڵنیایت دەتەوێت ئەم بابەتە بسڕیتەوە؟',
@@ -2011,17 +2017,9 @@ export default function Home() {
                 />
                 {showImageInput && (
                   <>
-              <input
-                    type="url"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder={dict.imagePlaceholder}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 mb-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
-                    dir="ltr"
-                  />
               <div className="mb-3 flex items-center gap-2">
                 <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-amber-400 transition">
-                  <span>{uploadingPostImage ? "..." : "Upload from device"}</span>
+                  <span>{uploadingPostImage ? (dict.uploadingLabel || "...") : (dict.uploadPostImage || "Upload from device")}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -2053,6 +2051,11 @@ export default function Home() {
                   </button>
                 )}
               </div>
+              {imageUrl && (
+                <div className="mb-3 rounded-xl overflow-hidden border border-gray-800 bg-gray-950 max-h-48 flex items-center justify-center">
+                  <img src={imageUrl} alt="Post preview" className="max-h-48 w-auto object-contain" />
+                </div>
+              )}
             </>
                 )}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-800">
@@ -2300,17 +2303,9 @@ export default function Home() {
                     <label className="text-xs text-gray-400 block mb-1">
                       {dict.avatarLabel}
                     </label>
-                    <input
-                      type="url"
-                      value={avatarUrl}
-                      onChange={(e) => setAvatarUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full bg-gray-950 border border-gray-800 rounded-xl p-2.5 text-white text-sm focus:outline-none focus:border-amber-500"
-                      dir="ltr"
-                    />
-              <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex items-center gap-2">
                 <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-amber-400 transition">
-                  <span>{uploadingAvatar ? "..." : "Upload avatar from device"}</span>
+                  <span>{uploadingAvatar ? (dict.uploadingLabel || "...") : (dict.uploadAvatarImage || "Upload avatar from device")}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -2333,6 +2328,11 @@ export default function Home() {
                   />
                 </label>
               </div>
+              {avatarUrl && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img src={avatarUrl} alt="Avatar preview" className="w-12 h-12 rounded-full object-cover border border-gray-700" />
+                </div>
+              )}
                   </div>
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">
