@@ -243,11 +243,31 @@ export default function Home() {
   const [editingPostContent, setEditingPostContent] = useState('');
 
   const [profile, setProfile] = useState<any>(null);
-  const [viewedAuthor, setViewedAuthor] = useState<{
+  const [viewedAuthor, setViewedAuthorState] = useState<{
     name: string;
     handle: string;
     userId?: string;
   } | null>(null);
+
+  const setViewedAuthor = (
+    val: { name: string; handle: string; userId?: string } | null
+  ) => {
+    setViewedAuthorState(val);
+    try {
+      if (val) sessionStorage.setItem("rupel_viewed_author", JSON.stringify(val));
+      else sessionStorage.removeItem("rupel_viewed_author");
+    } catch {}
+  };
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("rupel_viewed_author");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.handle) setViewedAuthorState(parsed);
+      }
+    } catch {}
+  }, []);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [bio, setBio] = useState('');
   const [location, setLocation] = useState('');
@@ -319,17 +339,140 @@ export default function Home() {
     });
   };
 
-  const pushNotification = (item: Omit<NotificationItem, 'id' | 'createdAt'>) => {
-    setNotifications((prev) => [
-      {
-        ...item,
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        createdAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+  const normHandle = (h?: string | null) => (h || "").trim().toLowerCase();
+
+  const resolveUserIdByHandle = async (handle?: string | null): Promise<string | null> => {
+    const clean = normHandle(handle).replace(/^@/, "");
+    if (!clean) return null;
+    const { data: postMatch } = await supabase
+      .from("posts")
+      .select("user_id, author_handle")
+      .ilike("author_handle", `%${clean}%`)
+      .not("user_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (postMatch?.user_id) return String(postMatch.user_id);
+
+    const { data: profMatch } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .ilike("username", clean)
+      .limit(1)
+      .maybeSingle();
+    return profMatch?.id ? String(profMatch.id) : null;
   };
 
+  const mapDbNotification = (
+    row: any,
+    idToHandle?: Map<string, string>
+  ): NotificationItem & { recipientId?: string; actorId?: string } => {
+    const actorId = row.actor_id ? String(row.actor_id) : undefined;
+    const recipientId = row.recipient_id ? String(row.recipient_id) : undefined;
+    const resolvedActor =
+      normHandle(row.actorHandle) ||
+      (actorId && idToHandle?.get(actorId)) ||
+      actorId ||
+      "";
+    const resolvedTarget =
+      normHandle(row.targetHandle) ||
+      (recipientId && idToHandle?.get(recipientId)) ||
+      recipientId ||
+      "";
+    return {
+      id: String(row.id),
+      type: row.type,
+      actorHandle: resolvedActor,
+      targetHandle: resolvedTarget,
+      postId: row.post_id ?? undefined,
+      createdAt: row.created_at ?? new Date().toISOString(),
+      recipientId,
+      actorId,
+    };
+  };
+
+  const fetchNotifications = async () => {
+    const [{ data, error }, { data: profilesRows }, { data: postsRows }] = await Promise.all([
+      supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("profiles").select("id, username"),
+      supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
+    ]);
+    if (error || !data) return;
+
+    const idToHandle = new Map<string, string>();
+    (profilesRows || []).forEach((p: any) => {
+      if (p?.id && p?.username) {
+        idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
+      }
+    });
+    (postsRows || []).forEach((pt: any) => {
+      if (pt?.user_id && pt?.author_handle) {
+        const h = normHandle(pt.author_handle);
+        if (h) idToHandle.set(String(pt.user_id), h.startsWith("@") ? h : `@${h}`);
+      }
+    });
+    if (user?.id && myHandle) {
+      idToHandle.set(String(user.id), normHandle(myHandle));
+    }
+
+    setNotifications(data.map((r: any) => mapDbNotification(r, idToHandle)));
+  };
+
+  const pushNotification = async (
+    item: Omit<NotificationItem, "id" | "createdAt"> & {
+      recipientId?: string | null;
+      actorId?: string | null;
+      message?: string;
+    }
+  ) => {
+    const actor = normHandle(item.actorHandle || myHandle);
+    const target = normHandle(item.targetHandle);
+    const optimistic: NotificationItem & { recipientId?: string; actorId?: string } = {
+      ...item,
+      actorHandle: actor,
+      targetHandle: target,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setNotifications((prev) => [optimistic, ...prev]);
+
+    const actorId = item.actorId ?? user?.id ?? null;
+    const recipientId = item.recipientId ?? (await resolveUserIdByHandle(target));
+    if (!actorId || !recipientId || actorId === recipientId) return;
+
+    const msg =
+      item.message ||
+      (item.type === "follow"
+        ? `${actor} started following you`
+        : item.type === "like"
+        ? `${actor} liked your post`
+        : `${actor} interacted with your post`);
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .insert([{
+        recipient_id: recipientId,
+        actor_id: actorId,
+        type: item.type,
+        post_id: item.postId ?? null,
+        message: msg,
+        is_read: false,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Notification insert failed:", error.message);
+      return;
+    }
+    if (data) {
+      const saved = mapDbNotification({
+        ...data,
+        actorHandle: actor,
+        targetHandle: target,
+      });
+      setNotifications((prev) => [saved, ...prev.filter((n) => n.id !== optimistic.id)]);
+    }
+  };
   const fetchPosts = async () => {
     const { data } = await supabase
       .from('posts')
@@ -355,13 +498,64 @@ export default function Home() {
   };
 
   const fetchFollows = async () => {
-    const { data, error } = await supabase
-      .from('follows')
-      .select('follower_handle, following_handle');
-    if (!error && data) {
-      setFollows(data);
+    const [{ data: followsRows, error }, { data: profilesRows }, { data: postsRows }] =
+      await Promise.all([
+        supabase.from("follows").select("follower_id, following_id"),
+        supabase.from("profiles").select("id, username"),
+        supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
+      ]);
+    if (error || !followsRows) return;
+
+    const idToHandle = new Map<string, string>();
+    (profilesRows || []).forEach((p: any) => {
+      if (p?.id && p?.username) {
+        idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
+      }
+    });
+    (postsRows || []).forEach((pt: any) => {
+      if (pt?.user_id && pt?.author_handle) {
+        const h = normHandle(pt.author_handle);
+        if (h) idToHandle.set(String(pt.user_id), h.startsWith("@") ? h : `@${h}`);
+      }
+    });
+    if (user?.id && myHandle) {
+      idToHandle.set(String(user.id), normHandle(myHandle));
     }
+
+    const mapped = followsRows.map((row: any) => {
+      const fId = String(row.follower_id || "");
+      const tId = String(row.following_id || "");
+      return {
+        follower_handle: idToHandle.get(fId) || fId,
+        following_handle: idToHandle.get(tId) || tId,
+        follower_id: fId,
+        following_id: tId,
+      };
+    });
+    setFollows(mapped as any);
   };
+
+  useEffect(() => {
+    fetchNotifications();
+    const channel = supabase
+      .channel("notifications-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        (payload) => {
+          const incoming = mapDbNotification(payload.new);
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === incoming.id)) return prev;
+            return [incoming, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   async function fetchProfile() {
     const { data: authData } = await supabase.auth.getUser();
@@ -512,7 +706,20 @@ export default function Home() {
         actorHandle: myHandle,
         targetHandle: normalizedTarget,
       });
-      await supabase.from('follows').insert([nextItem]);
+      if (user?.id) {
+      const followingUuid =
+        (typeof viewedAuthor !== "undefined" && viewedAuthor?.userId) ||
+        (await resolveUserIdByHandle(normalizedTarget));
+      if (followingUuid && followingUuid !== user.id) {
+        const { error: followErr } = await supabase
+          .from("follows")
+          .upsert(
+            [{ follower_id: user.id, following_id: followingUuid }],
+            { onConflict: "follower_id,following_id" }
+          );
+        if (followErr) console.error("Follow insert failed:", followErr.message);
+      }
+    }
     }
   };
 
@@ -832,7 +1039,10 @@ export default function Home() {
       }
     }
 
-    await supabase.from('posts').update({ likes: nextLikes }).eq('id', id);
+    await supabase
+      .from("posts")
+      .update({ likes: nextLikes, likes_count: nextLikes })
+      .eq("id", id);
     fetchPosts();
   };
 
@@ -983,7 +1193,7 @@ export default function Home() {
   );
 
   const myNotifications = user
-    ? notifications.filter((n) => n.targetHandle === myHandle)
+    ? notifications.filter((n) => normHandle(n.targetHandle) === normHandle(myHandle))
     : [];
 
   const renderPostCard = (post: any) => {
