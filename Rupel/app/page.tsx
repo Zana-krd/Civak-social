@@ -275,6 +275,7 @@ export default function Home() {
   const [editingPostContent, setEditingPostContent] = useState('');
 
   const [profile, setProfile] = useState<any>(null);
+  const [allProfiles, setAllProfiles] = useState<any[]>([]);
   const [viewedAuthor, setViewedAuthorState] = useState<{
     name: string;
     handle: string;
@@ -428,13 +429,16 @@ export default function Home() {
   const fetchNotifications = async () => {
     const [{ data, error }, { data: profilesRows }, { data: postsRows }] = await Promise.all([
       supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100),
-      supabase.from("profiles").select("id, username"),
+      supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location"),
       supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
     ]);
     if (error || !data) return;
 
     const idToHandle = new Map<string, string>();
-    (profilesRows || []).forEach((p: any) => {
+    setAllProfiles(profilesRows || []);
+        setAllProfiles(profilesRows || []);
+        setAllProfiles(profilesRows || []);
+        (allProfiles || []).forEach((p: any) => {
       if (p?.id && p?.username) {
         idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
       }
@@ -538,13 +542,13 @@ export default function Home() {
     const [{ data: followsRows, error }, { data: profilesRows }, { data: postsRows }] =
       await Promise.all([
         supabase.from("follows").select("follower_id, following_id"),
-        supabase.from("profiles").select("id, username"),
+        supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location"),
         supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
       ]);
     if (error || !followsRows) return;
 
     const idToHandle = new Map<string, string>();
-    (profilesRows || []).forEach((p: any) => {
+    (allProfiles || []).forEach((p: any) => {
       if (p?.id && p?.username) {
         idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
       }
@@ -1562,9 +1566,9 @@ export default function Home() {
               <div className="flex items-center justify-between border-b border-gray-800 pb-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 bg-amber-500/15 border border-amber-500/40 rounded-full flex items-center justify-center text-sm font-bold text-amber-400 overflow-hidden shrink-0">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
+                    {(profile?.avatar_url || (profile?.id === user?.id ? avatarUrl : "")) ? (
+                  <img
+                    src={profile?.avatar_url || (profile?.id === user?.id ? avatarUrl : "")}
                         alt="Avatar"
                         className="w-full h-full object-cover"
                       />
@@ -2245,45 +2249,61 @@ export default function Home() {
             </div>
 
             <section className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg space-y-4">
-              {viewedAuthor ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-14 h-14 bg-amber-500/15 border border-amber-500/40 rounded-full flex items-center justify-center text-lg font-bold text-amber-400 shrink-0">
-                      <span>{viewedAuthor.name.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <div>
-                      <h2 className="text-base font-bold text-white">
-                        {viewedAuthor.name}
-                      </h2>
-                      <p className="text-xs text-amber-400">
-                        {viewedAuthor.handle}
-                      </p>
-                    </div>
-                  </div>
+              {viewedAuthor ? (() => {
+  const va: any = viewedAuthor;
+  const cleanTargetHandle = String(va.handle || "").replace(/^@/, "").toLowerCase();
+              const targetId = String(va.userId || va.user_id || va.id || "");
+              const matchedProfile = (allProfiles || []).find((p: any) =>
+                (targetId && (String(p.id) === targetId || String(p.user_id || p.userId || "") === targetId)) ||
+                (cleanTargetHandle && String(p.username || p.handle || "").replace(/^@/, "").toLowerCase() === cleanTargetHandle)
+              );
+              const viewedAvatar = va.avatar_url || va.avatarUrl || matchedProfile?.avatar_url || matchedProfile?.avatarUrl || "";
+              const viewedBio = va.bio || matchedProfile?.bio || "";
+              const viewedLocation = va.location || matchedProfile?.location || "";
+              const viewedDisplayName = matchedProfile?.full_name || matchedProfile?.fullName || va.name || va.full_name || "";
 
-                  <button
-                    type="button"
-                    onClick={() => handleToggleFollow(viewedAuthor.handle)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0 ${
-                      isFollowingViewed
-                        ? 'bg-gray-800 text-amber-400 border border-amber-500/40 hover:bg-gray-700'
-                        : 'bg-amber-500 text-gray-950 hover:bg-amber-400'
-                    }`}
-                  >
-                    {isFollowingViewed ? (
-                      <>
-                        <UserCheck className="w-3.5 h-3.5" />
-                        <span>{dict.followingBtn}</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus2 className="w-3.5 h-3.5" />
-                        <span>{dict.followBtn}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : isEditingProfile ? (
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3.5">
+        <div className="w-14 h-14 bg-amber-500/15 border border-amber-500/40 rounded-full flex items-center justify-center text-lg font-bold text-amber-400 overflow-hidden shrink-0">
+          {viewedAvatar ? (
+            <img src={viewedAvatar} alt="Avatar" className="w-full h-full object-cover" />
+          ) : (
+            <span>{(viewedDisplayName || "U").charAt(0).toUpperCase()}</span>
+          )}
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-white">{viewedDisplayName}</h2>
+          <p className="text-xs text-amber-400">{va.handle}</p>
+          {viewedBio && <p className="text-sm text-gray-300 mt-1.5">{viewedBio}</p>}
+          {viewedLocation && <p className="text-xs text-gray-400 mt-1">📍 {viewedLocation}</p>}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => handleToggleFollow(viewedAuthor.handle)}
+        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0 ${
+          isFollowingViewed
+            ? "bg-gray-800 text-amber-400 border border-amber-500/40 hover:bg-gray-700"
+            : "bg-amber-500 text-gray-950 hover:bg-amber-400"
+        }`}
+      >
+        {isFollowingViewed ? (
+          <>
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>{dict.followingBtn}</span>
+          </>
+        ) : (
+          <>
+            <UserPlus2 className="w-3.5 h-3.5" />
+            <span>{dict.followBtn}</span>
+          </>
+        )}
+      </button>
+    </div>
+      );
+      })() : isEditingProfile ? (
+
                 <div className="space-y-3">
                   <h2 className="text-base font-bold text-amber-400">
                     {dict.editProfileTitle}
@@ -2374,12 +2394,13 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
+      <>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3.5">
                     <div className="w-14 h-14 bg-amber-500/15 border border-amber-500/40 rounded-full flex items-center justify-center text-lg font-bold text-amber-400 overflow-hidden shrink-0">
-                      {avatarUrl ? (
-                        <img
-                          src={avatarUrl}
+                      {(profile?.avatar_url || (profile?.id === user?.id ? avatarUrl : "")) ? (
+                  <img
+                    src={profile?.avatar_url || (profile?.id === user?.id ? avatarUrl : "")}
                           alt="Avatar"
                           className="w-full h-full object-cover"
                         />
@@ -2415,9 +2436,7 @@ export default function Home() {
                     >
                       {dict.editProfile}
                     </button>
-                  )}
-                </div>
-              )}
+      )}
 
               <div className="flex items-center gap-6 pt-3 border-t border-gray-800 text-xs">
                 <div>
@@ -2441,6 +2460,10 @@ export default function Home() {
                   <span className="text-gray-400">{dict.followingLabel}</span>
                 </button>
               </div>
+          </div>
+      </>
+    )
+  }
             </section>
 
             <div className="space-y-3">
