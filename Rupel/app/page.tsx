@@ -429,7 +429,7 @@ export default function Home() {
   const fetchNotifications = async () => {
     const [{ data, error }, { data: profilesRows }, { data: postsRows }] = await Promise.all([
       supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100),
-      supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location"),
+      supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location, created_at"),
       supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
     ]);
     if (error || !data) return;
@@ -542,7 +542,7 @@ export default function Home() {
     const [{ data: followsRows, error }, { data: profilesRows }, { data: postsRows }] =
       await Promise.all([
         supabase.from("follows").select("follower_id, following_id"),
-        supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location"),
+        supabase.from("profiles").select("id, username, full_name, avatar_url, bio, location, created_at"),
         supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
       ]);
     if (error || !followsRows) return;
@@ -2262,6 +2262,11 @@ export default function Home() {
               const viewedLocation = va.location || matchedProfile?.location || "";
               const viewedDisplayName = matchedProfile?.full_name || matchedProfile?.fullName || va.name || va.full_name || "";
 
+              const viewedUserId = String(matchedProfile?.id || targetId || "");
+              const viewedFollowersCount = viewedUserId ? (follows || []).filter((f: any) => String(f.following_id || "") === viewedUserId).length : 0;
+              const viewedFollowingCount = viewedUserId ? (follows || []).filter((f: any) => String(f.follower_id || "") === viewedUserId).length : 0;
+              const rawJoined = matchedProfile?.created_at || va.created_at || "";
+              const viewedJoinedDate = rawJoined ? new Date(rawJoined).toLocaleDateString() : "";
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-3.5">
@@ -2277,6 +2282,11 @@ export default function Home() {
           <p className="text-xs text-amber-400">{va.handle}</p>
           {viewedBio && <p className="text-sm text-gray-300 mt-1.5">{viewedBio}</p>}
           {viewedLocation && <p className="text-xs text-gray-400 mt-1">📍 {viewedLocation}</p>}
+                      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-gray-400">
+                        <span><strong className="text-amber-400">{viewedFollowersCount}</strong> {dict.followersLabel}</span>
+                        <span><strong className="text-amber-400">{viewedFollowingCount}</strong> {dict.followingLabel}</span>
+                        {viewedJoinedDate && <span>{viewedJoinedDate}</span>}
+                      </div>
         </div>
       </div>
       <button
