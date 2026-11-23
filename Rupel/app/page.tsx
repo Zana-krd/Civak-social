@@ -1531,14 +1531,37 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
               <span>{postComments.length}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => handleRepost(post)}
-              className="flex items-center gap-1.5 hover:text-amber-400 transition"
-            >
-              <Repeat2 className="w-4 h-4" />
-              <span>{dict.repostBtn}</span>
-            </button>
+            {(() => {
+              const normalizedMyHandle = String(myHandle || '').trim().toLowerCase();
+              const isRepostedByMe =
+                Array.isArray(repostHandles) &&
+                repostHandles.some((h) => String(h || '').trim().toLowerCase() === normalizedMyHandle) ||
+                (Array.isArray(posts) &&
+                  posts.some(
+                    (other: any) =>
+                      String(other?.author_handle || '').trim().toLowerCase() === normalizedMyHandle &&
+                      String(other?.content_ku || other?.content || '').includes(
+                        String(post?.author_handle || '').trim()
+                      ) &&
+                      String(other?.content_ku || other?.content || '').includes(
+                        String(post?.content_ku || post?.content || '').slice(0, 40)
+                      )
+                  ));
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleRepost(post)}
+                  className={`flex items-center gap-1.5 transition ${
+                    isRepostedByMe ? 'text-amber-400 font-semibold' : 'hover:text-amber-400'
+                  }`}
+                >
+                  <Repeat2
+                    className={`w-4 h-4 ${isRepostedByMe ? 'text-amber-400' : ''}`}
+                  />
+                  <span>{dict.repostBtn}</span>
+                </button>
+              );
+            })()}
           </div>
 
           <button
