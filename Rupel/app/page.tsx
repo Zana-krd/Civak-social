@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import SuggestedUsersCard from './SuggestedUsersCard';
 import {
   Heart,
   Send,
@@ -128,6 +129,8 @@ const t = {
     notifRepost: 'postek ji nû ve weşand',
     notifFollow: 'dest bi şopandina te kir',
     noFollowList: 'Hîn ti kes tune.',
+    suggestedTitle: 'Kesên ku dibe ku tu bişopînî',
+    suggestedMutual: '{count} şopînerên hevpar',
     error: 'Çewtiyek çêbû: ',
   },
   so: {
@@ -201,6 +204,8 @@ const t = {
     notifRepost: 'بابەتێکی دووبارە بڵاوکردەوە',
     notifFollow: 'دەستی کرد بە شوێنکەوتنت',
     noFollowList: 'هیچ کەسێک نییە.',
+    suggestedTitle: 'کەسانی پێشنیارکراو',
+    suggestedMutual: '{count} شوێنکەوتووی هاوبەش',
     error: 'هەڵەیەک ڕوویدا: ',
   },
 };
@@ -262,7 +267,7 @@ export default function Home() {
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
 
   const [follows, setFollows] = useState<
-    { follower_handle: string; following_handle: string }[]
+    { follower_handle: string; following_handle: string; follower_id?: string; following_id?: string }[]
   >([]);
   const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(
     null
@@ -380,22 +385,25 @@ export default function Home() {
   const resolveUserIdByHandle = async (handle?: string | null): Promise<string | null> => {
     const clean = normHandle(handle).replace(/^@/, "");
     if (!clean) return null;
-    const { data: postMatch } = await supabase
-      .from("posts")
-      .select("user_id, author_handle")
-      .ilike("author_handle", `%${clean}%`)
-      .not("user_id", "is", null)
-      .limit(1)
-      .maybeSingle();
-    if (postMatch?.user_id) return String(postMatch.user_id);
+    // Exact match only (escape % and _ which are wildcards in ilike).
+    const escaped = clean.replace(/[%_\\]/g, (m) => "\\" + m);
 
     const { data: profMatch } = await supabase
       .from("profiles")
       .select("id, username")
-      .ilike("username", clean)
+      .ilike("username", escaped)
       .limit(1)
       .maybeSingle();
-    return profMatch?.id ? String(profMatch.id) : null;
+    if (profMatch?.id) return String(profMatch.id);
+
+    const { data: postMatch } = await supabase
+      .from("posts")
+      .select("user_id, author_handle")
+      .ilike("author_handle", "@" + escaped)
+      .not("user_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    return postMatch?.user_id ? String(postMatch.user_id) : null;
   };
 
   const mapDbNotification = (
@@ -438,7 +446,7 @@ export default function Home() {
     setAllProfiles(profilesRows || []);
         setAllProfiles(profilesRows || []);
         setAllProfiles(profilesRows || []);
-        (allProfiles || []).forEach((p: any) => {
+        (profilesRows || []).forEach((p: any) => {
       if (p?.id && p?.username) {
         idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
       }
@@ -546,9 +554,10 @@ export default function Home() {
         supabase.from("posts").select("user_id, author_handle").not("user_id", "is", null),
       ]);
     if (error || !followsRows) return;
+    setAllProfiles(profilesRows || []);
 
     const idToHandle = new Map<string, string>();
-    (allProfiles || []).forEach((p: any) => {
+    (profilesRows || []).forEach((p: any) => {
       if (p?.id && p?.username) {
         idToHandle.set(String(p.id), `@${normHandle(p.username).replace(/^@/, "")}`);
       }
@@ -703,7 +712,7 @@ export default function Home() {
     setActiveSection('profile');
   };
 
-  const handleToggleFollow = async (targetHandleRaw: string) => {
+  const handleToggleFollow = async (targetHandleRaw: string, targetUserId?: string) => {
     if (!user) {
       setShowAuthModal(true);
       return;
@@ -715,52 +724,59 @@ export default function Home() {
 
     if (!normalizedTarget || normalizedTarget === myHandle) return;
 
-    const alreadyFollowing = follows.some(
+    const existing = follows.find(
       (f) =>
-        f.follower_handle.toLowerCase() === myHandle &&
-        f.following_handle.toLowerCase() === normalizedTarget
+        (f.follower_id === user.id || f.follower_handle.toLowerCase() === myHandle) &&
+        (f.following_handle.toLowerCase() === normalizedTarget ||
+          (targetUserId ? f.following_id === targetUserId : false))
     );
 
-    if (alreadyFollowing) {
-      setFollows((prev) =>
-        prev.filter(
-          (f) =>
-            !(
-              f.follower_handle.toLowerCase() === myHandle &&
-              f.following_handle.toLowerCase() === normalizedTarget
-            )
-        )
-      );
-      await supabase
+    // Resolve the target's id: explicit id > existing follow row > handle lookup
+    const followingId =
+      targetUserId || existing?.following_id || (await resolveUserIdByHandle(normalizedTarget));
+    if (!followingId || followingId === user.id) return;
+
+    const isSame = (f: (typeof follows)[number]) =>
+      (f.follower_id === user.id || f.follower_handle.toLowerCase() === myHandle) &&
+      (f.following_id === followingId ||
+        f.following_handle.toLowerCase() === normalizedTarget);
+
+    if (existing) {
+      setFollows((prev) => prev.filter((f) => !isSame(f)));
+      const { error: unfollowErr } = await supabase
         .from('follows')
         .delete()
-        .eq('follower_handle', myHandle)
-        .eq('following_handle', normalizedTarget);
+        .eq('follower_id', user.id)
+        .eq('following_id', followingId);
+      if (unfollowErr) {
+        console.error('Unfollow failed:', unfollowErr.message);
+        setFollows((prev) => [...prev, existing]);
+      }
     } else {
       const nextItem = {
         follower_handle: myHandle,
         following_handle: normalizedTarget,
+        follower_id: user.id as string,
+        following_id: followingId,
       };
       setFollows((prev) => [...prev, nextItem]);
+      const { error: followErr } = await supabase
+        .from('follows')
+        .upsert([{ follower_id: user.id, following_id: followingId }], {
+          onConflict: 'follower_id,following_id',
+        });
+      if (followErr) {
+        console.error('Follow insert failed:', followErr.message);
+        setFollows((prev) => prev.filter((f) => !isSame(f)));
+        return;
+      }
       pushNotification({
         type: 'follow',
         actorHandle: myHandle,
         targetHandle: normalizedTarget,
+        recipientId: followingId,
+        actorId: user.id,
       });
-      if (user?.id) {
-      const followingUuid =
-        (typeof viewedAuthor !== "undefined" && viewedAuthor?.userId) ||
-        (await resolveUserIdByHandle(normalizedTarget));
-      if (followingUuid && followingUuid !== user.id) {
-        const { error: followErr } = await supabase
-          .from("follows")
-          .upsert(
-            [{ follower_id: user.id, following_id: followingUuid }],
-            { onConflict: "follower_id,following_id" }
-          );
-        if (followErr) console.error("Follow insert failed:", followErr.message);
-      }
-    }
     }
   };
 
@@ -2198,7 +2214,22 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredPosts.map((post) => renderPostCard(post))}
+                {filteredPosts.map((post, index) => (
+                  <Fragment key={post.id}>
+                    {renderPostCard(post)}
+                    {user && index === Math.min(9, filteredPosts.length - 1) && (
+                      <SuggestedUsersCard
+                        dict={dict}
+                        profiles={allProfiles}
+                        follows={follows}
+                        currentUserId={user.id}
+                        myHandle={myHandle}
+                        onFollow={(handle, id) => handleToggleFollow(handle, id)}
+                        onOpenProfile={(handle, name) => openHandleProfile(handle, name)}
+                      />
+                    )}
+                  </Fragment>
+                ))}
               </div>
             )}
           </>
@@ -2291,7 +2322,7 @@ export default function Home() {
       </div>
       <button
         type="button"
-        onClick={() => handleToggleFollow(viewedAuthor.handle)}
+        onClick={() => handleToggleFollow(viewedAuthor.handle, viewedUserId || undefined)}
         className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0 ${
           isFollowingViewed
             ? "bg-gray-800 text-amber-400 border border-amber-500/40 hover:bg-gray-700"
@@ -2475,6 +2506,36 @@ export default function Home() {
     )
   }
             </section>
+
+            {user &&
+              (() => {
+                const vaHandle = viewedAuthor
+                  ? normHandle(viewedAuthor.handle).replace(/^@/, '')
+                  : '';
+                const vaId = viewedAuthor
+                  ? String(
+                      viewedAuthor.userId ||
+                        (allProfiles || []).find(
+                          (p: any) =>
+                            normHandle(p.username).replace(/^@/, '') === vaHandle
+                        )?.id ||
+                        ''
+                    )
+                  : '';
+                return (
+                  <SuggestedUsersCard
+                    key={vaId || 'me'}
+                    dict={dict}
+                    profiles={allProfiles}
+                    follows={follows}
+                    currentUserId={user.id}
+                    myHandle={myHandle}
+                    excludeIds={vaId ? [vaId] : []}
+                    onFollow={(handle, id) => handleToggleFollow(handle, id)}
+                    onOpenProfile={(handle, name) => openHandleProfile(handle, name)}
+                  />
+                );
+              })()}
 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-amber-400 px-1">
