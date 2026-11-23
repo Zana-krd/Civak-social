@@ -1563,7 +1563,80 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
               );
             })()}
           </div>
+      {(() => {
+        const rawText = String((post as any).content_ku || post.content || "");
+        const qp =
+          (post as any).quoted_post ||
+          (post as any).quote_post ||
+          (post as any).quotedPost ||
+          (post as any).quote ||
+          null;
 
+        let qText =
+          (qp && (qp.content || qp.text || qp.body || qp.content_ku)) ||
+          (post as any).quote_content ||
+          (post as any).quoted_text ||
+          "";
+        let qAuthor =
+          (qp && (qp.author_name || qp.author || qp.name)) ||
+          (post as any).quote_author ||
+          (post as any).quoted_author ||
+          "";
+        let qHandleRaw =
+          (qp && (qp.author_handle || qp.handle || qp.username)) ||
+          (post as any).quote_handle ||
+          (post as any).quoted_handle ||
+          "";
+
+        if (!qText) {
+          const m = rawText.match(/❝([\s\S]*?)❞\s*(?:@([A-Za-z0-9_.-]+))?/);
+          if (m) {
+            qText = (m[1] || "").trim();
+            if (!qHandleRaw && m[2]) qHandleRaw = m[2].trim();
+          }
+        }
+
+        const qHandle = String(qHandleRaw || "").replace(/^@/, "");
+        if (!qText && !qHandle) return null;
+
+        return (
+          <div
+            data-no-open="true"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2.5 mb-1 rounded-xl border border-gray-800 bg-gray-950/65 p-3 space-y-1"
+          >
+            {qText && (
+              <p className="text-xs sm:text-sm text-gray-200 whitespace-pre-line break-words leading-relaxed">
+                <span className="text-amber-400 font-semibold mr-1">❝</span>
+                {String(qText)}
+                <span className="text-amber-400 font-semibold ml-1">❞</span>
+              </p>
+            )}
+            {(qHandle || qAuthor) && (
+              <div className="text-xs font-semibold text-amber-400" dir="ltr">
+                {qHandle ? `@${qHandle}` : qAuthor}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      
+
+          
+          <button
+            type="button"
+            data-no-open="true"
+            aria-label="Quote"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof handleRepost === "function") {
+                handleRepost(post);
+              }
+            }}
+            className="px-2.5 py-1 rounded-lg border border-gray-700/80 bg-gray-900/80 text-amber-400 hover:border-amber-400/60 transition text-xs font-bold leading-none"
+          >
+            ❝
+          </button>
           <button
             type="button"
             onClick={() => toggleBookmark(Number(post.id))}
@@ -2919,7 +2992,7 @@ aria-label={dict.searchPlaceholder}
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span className="font-semibold text-amber-400">@{post.author_handle}</span>
                         </div>
-                        <p className="text-sm text-gray-200 line-clamp-3">{post.content}</p>
+                        <p className="text-sm text-gray-200 line-clamp-3">{String(post.content || "").replace(/❝[\s\S]*?❞\s*(?:@[A-Za-z0-9_.-]+)?/g, "").trim()}</p>
                       </div>
                     ))
                   )}
