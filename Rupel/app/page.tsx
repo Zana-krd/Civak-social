@@ -210,6 +210,27 @@ const t = {
   },
 };
 
+const SUGGESTED_LIMITS = {
+  profile: 3,
+  feed: 6,
+  modal: 50,
+} as const;
+
+const renderBrandLogo = (label: string) => {
+  if (!label) return null;
+  const first = label.charAt(0);
+  const rest = label.slice(1);
+  if (first.toUpperCase() === "R") {
+    return (
+      <>
+        <span className="text-amber-400">{first}</span>
+        <span>{rest}</span>
+      </>
+    );
+  }
+  return <>{label}</>;
+};
+
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [lang, setLang] = useState<'ku' | 'so'>('ku');
@@ -259,7 +280,10 @@ export default function Home() {
   const [showImageInput, setShowImageInput] = useState(false);
   const [selectedTag, setSelectedTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchTab, setSearchTab] = useState<'all' | 'posts' | 'people' | 'tags'>('all');
+  const [showSuggestedModal, setShowSuggestedModal] = useState(false);
+const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
   const [savedPostIds, setSavedPostIds] = useState<number[]>([]);
 
   const [commentsByPost, setCommentsByPost] = useState<Record<number, CommentItem[]>>({});
@@ -710,6 +734,9 @@ export default function Home() {
     }
     setIsEditingProfile(false);
     setActiveSection('profile');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
   };
 
   const handleToggleFollow = async (targetHandleRaw: string, targetUserId?: string) => {
@@ -929,9 +956,7 @@ export default function Home() {
     const originalBody = post.content_ku || post.content || '';
     const originalHandle =
       post.author_handle || (post.author ? `@${post.author}` : '');
-    const repostedText = originalHandle
-      ? `${originalBody}\n\n🔁 ${dict.repostedBadge} ${originalHandle}`
-      : originalBody;
+    const repostedText = originalHandle ? `${originalBody}\n\n🔁 ${originalHandle}` : originalBody;
 
     if (repostedText.length > MAX_POST_LENGTH) {
       alert(dict.error + 'Post is too long to repost.');
@@ -1044,9 +1069,23 @@ export default function Home() {
 
   const handleDeletePost = async (id: number) => {
     if (!window.confirm(dict.deleteConfirm)) return;
-    const { error } = await supabase.from('posts').delete().eq('id', id);
+    const { data: deletedRows, error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', id)
+      .select('id');
     if (!error) {
-      setPosts((prev) => prev.filter((p) => p.id !== id));
+      if (!deletedRows || deletedRows.length === 0) {
+        alert(dict.error + 'No matching row deleted (check RLS permissions or post id).');
+        if (typeof fetchPosts === 'function') {
+          await fetchPosts();
+        }
+        return;
+      }
+      setPosts((prev) => prev.filter((p) => String(p.id) !== String(id)));
+      if (typeof fetchPosts === 'function') {
+        await fetchPosts();
+      }
     } else {
       alert(dict.error + error.message);
     }
@@ -1255,6 +1294,31 @@ export default function Home() {
 
   const renderPostCard = (post: any) => {
     const postBody = post.content_ku || post.content || '';
+    const repostLines: string[] = [];
+    const repostHandles: string[] = [];
+    let trimmedBody = postBody;
+    const lines = postBody.split(/\r?\n/);
+    while (lines.length > 0) {
+      const lastLine = lines[lines.length - 1].trim();
+      if (!lastLine) {
+        lines.pop();
+        continue;
+      }
+      if (lastLine.startsWith("🔁")) {
+        repostLines.unshift(lastLine);
+        const handleMatches = lastLine.match(/@[A-Za-z0-9_.-]+/g) || [];
+        for (const h of handleMatches) {
+          if (!repostHandles.includes(h)) {
+            repostHandles.push(h);
+          }
+        }
+        lines.pop();
+      } else {
+        break;
+      }
+    }
+    trimmedBody = lines.join("\n").trimEnd();
+    const cleanPostBody = trimmedBody || (repostLines.length > 0 ? "" : postBody);
     const ownedByMe = isPostOwnedByCurrentUser(post);
     const displayName = ownedByMe
       ? profile?.full_name || post.author_name || post.author || dict.defaultUser
@@ -1275,10 +1339,45 @@ export default function Home() {
       >
         <div className="flex items-center justify-between gap-2">
           <button
-            type="button"
-            onClick={() => openAuthorProfile(post)}
-            className="text-start group"
-          >
+                  type="button"
+                  onClick={() => openAuthorProfile(post)}
+                  className="flex items-center gap-2.5 text-start group min-w-0"
+                >
+                  {(() => {
+                    const cleanH = String(displayHandle || '').replace(/^@+/, '').toLowerCase();
+                    const profEntry = Object.values(((typeof allProfiles !== 'undefined' ? allProfiles : {}) as Record<string, any>)).find(
+                      (pr: any) =>
+                        String(pr?.handle || pr?.username || '').replace(/^@+/, '').toLowerCase() === cleanH
+                    );
+                    const candidates = [
+                      ownedByMe ? (typeof profile !== 'undefined' ? profile?.avatar_url : null) : null,
+                      ownedByMe ? (typeof profile !== 'undefined' ? profile?.avatar : null) : null,
+                      ownedByMe ? (typeof profile !== 'undefined' ? profile?.photo_url : null) : null,
+                      post?.author_avatar,
+                      post?.avatar_url,
+                      post?.avatar,
+                      post?.author_avatar_url,
+                      profEntry?.avatar_url,
+                      profEntry?.avatar,
+                      profEntry?.photo_url,
+                    ];
+                    const avatarSrc = String(
+                      candidates.find((v) => typeof v === 'string' && v.trim().length > 0) || ''
+                    );
+                    const initial = String(displayName || cleanH || '?').trim().charAt(0).toUpperCase() || '?';
+                    return avatarSrc ? (
+                      <img
+                        src={avatarSrc}
+                        alt={displayName}
+                        className="w-8 h-8 rounded-full object-cover border border-amber-400/40 shrink-0"
+                      />
+                    ) : (
+                      <span className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 text-amber-400 text-xs font-bold flex items-center justify-center shrink-0">
+                        {initial}
+                      </span>
+                    );
+                  })()}
+                  <span className="truncate">
             <span className="text-sm font-semibold text-amber-400 group-hover:underline">
               {displayName}
             </span>
@@ -1287,7 +1386,8 @@ export default function Home() {
                 {displayHandle}
               </span>
             )}
-          </button>
+          </span>
+                </button>
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-gray-500">
@@ -1354,12 +1454,41 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <p
-              className="text-base text-gray-100 leading-relaxed whitespace-pre-wrap"
-              dir="auto"
-            >
-              {renderContentWithTagsAndMentions(postBody)}
-            </p>
+            {cleanPostBody && (
+              <p
+                className="text-base text-gray-100 leading-relaxed whitespace-pre-wrap"
+                dir="auto"
+              >
+                {renderContentWithTagsAndMentions(cleanPostBody)}
+              </p>
+            )}
+            {(repostHandles.length > 0 || repostLines.length > 0) && (
+              <div
+                className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-gray-800/70 border border-gray-700/70 px-2.5 py-1 text-xs text-gray-300"
+                dir="ltr"
+              >
+                <Repeat2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                {repostHandles.length > 0 ? (
+                  repostHandles.map((handle) => (
+                    <button
+                      key={handle}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openHandleProfile(handle);
+                      }}
+                      className="font-medium text-amber-300/90 hover:text-amber-200 hover:underline bg-gray-900/70 border border-gray-700/60 rounded-md px-1.5 py-0.5 transition cursor-pointer"
+                    >
+                      {handle}
+                    </button>
+                  ))
+                ) : (
+                  <span className="font-medium text-amber-300/90">
+                    {repostLines[repostLines.length - 1].replace(/^🔁\s*/, "")}
+                  </span>
+                )}
+              </div>
+            )}
             {postImage && (
               <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950">
                 <img
@@ -1531,7 +1660,7 @@ export default function Home() {
               }}
               className="text-xl font-bold tracking-tight text-white hover:text-amber-400 transition truncate"
             >
-              {dict.title}
+              {renderBrandLogo(dict.title)}
             </button>
             {selectedTag && (
               <button
@@ -1548,23 +1677,12 @@ export default function Home() {
           <div className="flex items-center justify-end">
             <button
               type="button"
-              onClick={() => {
-                if (!user) {
-                  setShowAuthModal(true);
-                  return;
-                }
-                setShowNotificationsModal(true);
-              }}
-              className="relative flex items-center bg-gray-900 hover:bg-gray-800 border border-gray-800 text-xs text-amber-400 p-2 rounded-xl transition"
-              aria-label={dict.notificationsTitle}
-            >
-              <Bell className="w-4 h-4" />
-              {user && myNotifications.length > 0 && (
-                <span className="ms-1 px-1.5 py-0.2 bg-amber-500 text-gray-950 rounded-full text-[10px] font-bold">
-                  {myNotifications.length}
-                </span>
-              )}
-            </button>
+              onClick={() => setShowSearchModal(true)}
+className="flex items-center justify-center bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-amber-400/50 text-amber-400 w-9 h-9 rounded-xl transition shrink-0"
+aria-label={dict.searchPlaceholder}
+>
+<span className="text-base font-bold leading-none">🔍</span>
+</button>
           </div>
         </div>
       </header>
@@ -2032,7 +2150,7 @@ export default function Home() {
                   onChange={(e) => setContent(e.target.value)}
                   maxLength={MAX_POST_LENGTH}
                   placeholder={dict.placeholder}
-                  className="w-full bg-transparent text-white placeholder-gray-500 focus:outline-none resize-none h-24 mb-2 text-sm"
+                  rows={2} onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; }} className="w-full bg-transparent text-white placeholder-gray-500 focus:outline-none resize-none min-h-[56px] max-h-40 mb-1.5 text-sm"
                   dir={lang === 'so' ? 'rtl' : 'ltr'}
                 />
                 {showImageInput && (
@@ -2160,14 +2278,14 @@ export default function Home() {
             </div>
 
             <div className="space-y-3">
-              <div className="relative">
+              <div style={{ display: "none" }} className="relative">
                 <Search className="w-4 h-4 text-gray-500 absolute top-1/2 -translate-y-1/2 start-3.5" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={dict.searchPlaceholder}
+                  style={{ display: "none" }} placeholder={dict.searchPlaceholder}
                   className="w-full bg-gray-900 border border-gray-800 rounded-xl ps-10 pe-9 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
                 />
                 {searchQuery && (
@@ -2181,7 +2299,7 @@ export default function Home() {
                 )}
               </div>
 
-              {trendingTags.length > 0 && (
+              {false && trendingTags.length > 0 && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
                   {trendingTags.map((tag) => {
                     const active = selectedTag.toLowerCase() === tag;
@@ -2226,7 +2344,9 @@ export default function Home() {
                         myHandle={myHandle}
                         onFollow={(handle, id) => handleToggleFollow(handle, id)}
                         onOpenProfile={(handle, name) => openHandleProfile(handle, name)}
-                      />
+                      
+              limit={SUGGESTED_LIMITS.feed}
+            />
                     )}
                   </Fragment>
                 ))}
@@ -2533,7 +2653,9 @@ export default function Home() {
                     excludeIds={vaId ? [vaId] : []}
                     onFollow={(handle, id) => handleToggleFollow(handle, id)}
                     onOpenProfile={(handle, name) => openHandleProfile(handle, name)}
-                  />
+                  
+              limit={SUGGESTED_LIMITS.profile}
+            />
                 );
               })()}
 
@@ -2580,6 +2702,243 @@ export default function Home() {
           </section>
         )}
       </div>
-    </main>
+    
+      {/* Fixed Bottom Navigation Bar */}
+      <nav
+        aria-label={dict.mainFeed}
+        className="fixed bottom-0 inset-x-0 z-40 bg-gray-900/95 backdrop-blur border-t border-gray-800"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="max-w-2xl mx-auto grid grid-cols-3 items-center h-14 px-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!user) {
+                setShowAuthModal(true);
+                return;
+              }
+              setShowNotificationsModal(true);
+            }}
+            className="relative flex flex-col items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
+          >
+            <span className="relative inline-flex items-center justify-center text-base">
+              🔔
+              {user && myNotifications.length > 0 && (
+                <span className="ms-1 px-1.5 py-0.2 bg-amber-400 text-gray-950 rounded-full text-[10px] font-bold">
+                  {myNotifications.length}
+                </span>
+              )}
+            </span>
+            <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.notificationsTitle}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setViewedAuthor(null);
+              setActiveSection('feed');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center gap-0.5 py-1 transition ${
+              activeSection === 'feed' && !viewedAuthor ? 'text-amber-400' : 'text-gray-400 hover:text-amber-400'
+            }`}
+          >
+            <span className="text-base">🏠</span>
+            <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.mainFeed}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSuggestedModal(true)}
+            className="flex flex-col items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
+          >
+            <span className="text-base">👥</span>
+            <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.exploreNav}</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Comprehensive Search Modal */}
+      {showSearchModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-start justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="w-full max-w-xl bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-4 mt-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={dict.searchPlaceholder}
+                className="flex-1 bg-gray-950 border border-gray-800 focus:border-amber-400 rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none"
+              />
+              {(searchQuery || selectedTag) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedTag('');
+                  }}
+                  className="px-2.5 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 rounded-xl"
+                >
+                  ✕
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowSearchModal(false)}
+                className="px-3 py-2 text-xs font-semibold bg-amber-400 text-gray-950 rounded-xl"
+              >
+                {dict.cancel}
+              </button>
+            </div>
+
+            {!searchQuery.trim() && !selectedTag && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-amber-400">#{dict.exploreNav}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Array.from(
+                    (posts as Array<{ content?: string }>).reduce(
+                      (acc: Map<string, number>, item: { content?: string }) => {
+                      const matches = (item.content || '').match(/#[^\s#]+/g) || [];
+                      for (const m of matches) {
+                        const clean = m.slice(1).toLowerCase();
+                        if (clean) acc.set(clean, (acc.get(clean) || 0) + 1);
+                      }
+                      return acc;
+                    }, new Map<string, number>())
+                  )
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 7)
+                    .map(([tag]) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTag(tag);
+                          setSearchQuery('#' + tag);
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-full bg-gray-950 border border-gray-800 hover:border-amber-400/50 text-amber-400 transition"
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-1.5 border-b border-gray-800 pb-2 text-xs overflow-x-auto">
+              {(['all', 'posts', 'people', 'tags'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setSearchTab(tab)}
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap ${
+                    searchTab === tab ? 'bg-amber-400 text-gray-950' : 'bg-gray-950 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {tab === 'all'
+                    ? dict.exploreNav
+                    : tab === 'posts'
+                    ? dict.mainFeed
+                    : tab === 'people'
+                    ? dict.followersLabel
+                    : '#'}
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-[55vh] overflow-y-auto space-y-3">
+              {(searchTab === 'all' || searchTab === 'people') && searchQuery.trim() && (
+                <div className="space-y-1.5">
+                  {Object.values(allProfiles || {})
+                    .filter((prof) => {
+                      const q = searchQuery.replace(/^[@#]/, '').toLowerCase();
+                      return (prof.name || '').toLowerCase().includes(q) || (prof.handle || '').toLowerCase().includes(q);
+                    })
+                    .slice(0, 6)
+                    .map((prof) => (
+                      <button
+                        key={prof.handle}
+                        type="button"
+                        onClick={() => {
+                          openHandleProfile(prof.handle, prof.name);
+                          setShowSearchModal(false);
+                        }}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-gray-950 border border-gray-800 hover:border-amber-400/40 text-left"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold text-white">{prof.name || prof.handle}</div>
+                          <div className="text-xs text-gray-400">@{prof.handle}</div>
+                        </div>
+                        <span className="text-xs text-amber-400">→</span>
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {(searchTab === 'all' || searchTab === 'posts' || searchTab === 'tags') && (
+                <div className="space-y-2">
+                  {filteredPosts.length === 0 ? (
+                    <div className="text-center text-xs text-gray-400 py-6">
+                      {selectedTag || searchQuery ? dict.noTagPosts : dict.noPosts}
+                    </div>
+                  ) : (
+                    filteredPosts.slice(0, 10).map((post) => (
+                      <div
+                        key={post.id}
+                        onClick={() => {
+                          setViewedAuthor(null);
+                          setActiveSection('feed');
+                          setShowSearchModal(false);
+                        }}
+                        className="p-3 rounded-xl bg-gray-950 border border-gray-800 hover:border-amber-400/40 cursor-pointer space-y-1"
+                      >
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span className="font-semibold text-amber-400">@{post.author_handle}</span>
+                        </div>
+                        <p className="text-sm text-gray-200 line-clamp-3">{post.content}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Suggested Users Modal */}
+      {showSuggestedModal && user && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+              <span className="text-sm font-bold text-amber-400">{dict.exploreNav}</span>
+              <button
+                type="button"
+                onClick={() => setShowSuggestedModal(false)}
+                className="px-2.5 py-1 text-xs bg-gray-800 text-gray-200 rounded-lg"
+              >
+                {dict.cancel}
+              </button>
+            </div>
+            <SuggestedUsersCard
+              dict={dict}
+              profiles={allProfiles}
+              follows={follows}
+              currentUserId={user.id}
+              myHandle={myHandle}
+              onFollow={(handle, id) => handleToggleFollow(handle, id)}
+              onOpenProfile={(handle, name) => {
+                setShowSuggestedModal(false);
+                openHandleProfile(handle, name);
+              }}
+            
+              limit={SUGGESTED_LIMITS.feed}
+            />
+          </div>
+        </div>
+      )}
+
+      </main>
   );
 }
