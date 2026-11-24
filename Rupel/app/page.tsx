@@ -1511,33 +1511,40 @@ const handleRepost = async (post: any) => {
     )()
 </div>
             )}
-            {(repostHandles.length > 0 || repostLines.length > 0) && (
-              <div
-                className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-gray-800/70 border border-gray-700/70 px-2.5 py-1 text-xs text-gray-300"
-                dir="ltr"
-              >
-                <Repeat2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                {repostHandles.length > 0 ? (
-                  repostHandles.map((handle) => (
-                    <button
-                      key={handle}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openHandleProfile(handle);
-                      }}
-                      className="font-medium text-amber-300/90 hover:text-amber-200 hover:underline bg-gray-900/70 border border-gray-700/60 rounded-md px-1.5 py-0.5 transition cursor-pointer"
-                    >
-                      {handle}
-                    </button>
-                  ))
-                ) : (
-                  <span className="font-medium text-amber-300/90">
-                    {repostLines[repostLines.length - 1].replace(/^🔁\s*/, "")}
-                  </span>
-                )}
-              </div>
-            )}
+            {(() => {
+  const hasRepost = repostHandles.length > 0 || repostLines.length > 0;
+  if (!hasRepost) return null;
+  const rawHandle =
+    repostHandles[0] ||
+    (repostLines[0] || "").replace(/^🔁\s*/, "").trim() ||
+    "";
+  const cleanHandle = rawHandle.replace(/^@/, "").trim();
+  const bodyText = String(cleanPostBody || "").trim();
+  return (
+    <div className="mt-2 rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
+      {cleanHandle && (
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
+          <Repeat2 className="w-3.5 h-3.5 shrink-0" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openHandleProfile(cleanHandle);
+            }}
+            className="hover:underline cursor-pointer"
+          >
+            @{cleanHandle}
+          </button>
+        </div>
+      )}
+      {bodyText && (
+        <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
+          {renderContentWithTagsAndMentions(bodyText)}
+        </div>
+      )}
+    </div>
+  );
+})()}
             {postImage && (
               <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950">
                 <img
