@@ -1508,31 +1508,7 @@ const handleRepost = async (post: any) => {
           <>
             {cleanPostBody && (
               <div>
-  {(() => {
-  const parsed = renderEmbeddedPostCard(String(cleanPostBody || ""));
-  if (!parsed) {
-    return renderContentWithTagsAndMentions(cleanPostBody);
-  }
-  return (
-    <div className="space-y-2.5">
-      {parsed.userComment && (
-        <div className="text-base text-gray-100 leading-relaxed whitespace-pre-wrap" dir="auto">
-          {renderContentWithTagsAndMentions(parsed.userComment)}
-        </div>
-      )}
-      <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
-        {parsed.quotedHandle && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
-            <span>@{parsed.quotedHandle}</span>
-          </div>
-        )}
-        <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
-          {renderContentWithTagsAndMentions(parsed.quotedBody)}
-        </div>
-      </div>
-    </div>
-  );
-})()}
+  )()}
 </div>
             )}
             {(repostHandles.length > 0 || repostLines.length > 0) && (
