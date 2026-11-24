@@ -233,6 +233,9 @@ const renderBrandLogo = (label: string) => {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [quoteDraft, setQuoteDraft] = useState("");
+  const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [lang, setLang] = useState<'ku' | 'so'>('ku');
   const [user, setUser] = useState<any>(null);
 
@@ -1021,30 +1024,26 @@ const handleRepost = async (post: any) => {
   }
 
   const handleQuote = (targetPost: any) => {
-    if (!targetPost) return;
-    setRepostMenuPostId(null);
-    const raw = String(targetPost.content_ku || targetPost.content || '').trim();
-    const withoutQuote = raw.replace(/^❝[\s\S]*?❞\s*(?:@[A-Za-z0-9_.-]+)?\s*/g, '').trim();
-    const clean = (withoutQuote || raw)
-      .split('\n')
-      .map((ln) => ln.trim())
-      .filter((ln) => ln && !ln.startsWith('🔁') && ln !== '❝' && ln !== '❞')
-      .join(' ')
-      .replace(/[❝❞]/g, '')
-      .trim();
-    const hRaw = String(targetPost.author_handle || targetPost.handle || targetPost.username || '').replace(/^@/, '').trim();
-    const formatted = `❝ ${clean} ❞${hRaw ? ` @${hRaw}` : ''}\n\n`;
-    setEmail((prev: any) => (String(prev || '').includes(formatted.trim()) ? String(prev) : formatted + String(prev || '').trimStart()));
-    setTimeout(() => {
-      if (postTextareaRef?.current) {
-        if (!postTextareaRef.current.value.includes(formatted.trim())) {
-          postTextareaRef.current.value = formatted + (postTextareaRef.current.value || '').trimStart();
-        }
-        postTextareaRef.current.focus();
-        postTextareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 30);
-  };;
+  if (!targetPost) return;
+  setRepostMenuPostId(null);
+  const raw = String(targetPost.content_ku || targetPost.content || "").trim();
+  const withoutQuote = raw.replace(/^[\s\S]*?\s*(?:@[A-Za-z0-9_.-]+)?\s*/, "").trim();
+  const clean = (withoutQuote || raw)
+    .split("\n")
+    .map((ln) => ln.trim())
+    .filter((ln) => ln && !ln.startsWith("🔁") && ln !== "❝" && ln !== "❞")
+    .join(" ")
+    .replace(/[\u201c\u201d]/g, "")
+    .trim();
+  const hRaw = String(targetPost.author_handle || targetPost.handle || targetPost.username || "").replace(/^@/, "").trim();
+  const formatted = `❝ ${clean} ${hRaw ? `@${hRaw}` : ""} ❞\n\n`;
+  setQuoteDraft(formatted);
+  setQuoteModalOpen(true);
+};
+
+
+
+
 
   const handleAddComment = async (postId: number, e: React.FormEvent) => {
     e.preventDefault();
@@ -1506,45 +1505,68 @@ const handleRepost = async (post: any) => {
           </div>
         ) : (
           <>
-            {cleanPostBody && (
-              <div>
-    )()
-</div>
-            )}
             {(() => {
+  const rawBody = String(cleanPostBody || "").trim();
+  if (!rawBody) return null;
+  const parsed = renderEmbeddedPostCard(rawBody);
+  if (parsed) {
+    return (
+      <div className="space-y-2.5">
+        {parsed.userComment && (
+          <div className="text-base text-gray-100 leading-relaxed whitespace-pre-wrap" dir="auto">
+            {renderContentWithTagsAndMentions(parsed.userComment)}
+          </div>
+        )}
+        <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
+          {parsed.quotedHandle && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
+              <span>@{parsed.quotedHandle}</span>
+            </div>
+          )}
+          <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
+            {renderContentWithTagsAndMentions(parsed.quotedBody)}
+          </div>
+        </div>
+      </div>
+    );
+  }
   const hasRepost = repostHandles.length > 0 || repostLines.length > 0;
-  if (!hasRepost) return null;
-  const rawHandle =
-    repostHandles[0] ||
-    (repostLines[0] || "").replace(/^🔁\s*/, "").trim() ||
-    "";
-  const cleanHandle = rawHandle.replace(/^@/, "").trim();
-  const bodyText = String(cleanPostBody || "").trim();
-  return (
-    <div className="mt-2 rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
-      {cleanHandle && (
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
-          <Repeat2 className="w-3.5 h-3.5 shrink-0" />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openHandleProfile(cleanHandle);
-            }}
-            className="hover:underline cursor-pointer"
-          >
-            @{cleanHandle}
-          </button>
-        </div>
-      )}
-      {bodyText && (
+  if (hasRepost) {
+    const rawHandle =
+      repostHandles[0] ||
+      (repostLines[0] || "").replace(/^🔁\s*/, "").trim() ||
+      "";
+    const cleanHandle = rawHandle.replace(/^@/, "").trim();
+    return (
+      <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
+        {cleanHandle && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
+            <Repeat2 className="w-3.5 h-3.5 shrink-0" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openHandleProfile(cleanHandle);
+              }}
+              className="hover:underline cursor-pointer"
+            >
+              @{cleanHandle}
+            </button>
+          </div>
+        )}
         <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
-          {renderContentWithTagsAndMentions(bodyText)}
+          {renderContentWithTagsAndMentions(rawBody)}
         </div>
-      )}
+      </div>
+    );
+  }
+  return (
+    <div className="text-base text-gray-100 leading-relaxed whitespace-pre-wrap" dir="auto">
+      {renderContentWithTagsAndMentions(rawBody)}
     </div>
   );
 })()}
+      {(() => null)()}
             {postImage && (
               <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950">
                 <img
@@ -3044,6 +3066,79 @@ aria-label={dict.searchPlaceholder}
         </div>
       )}
 
-      </main>
+      
+{quoteModalOpen && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    onClick={() => {
+      if (!quoteSubmitting) setQuoteModalOpen(false);
+    }}
+  >
+    <div
+      className="w-full max-w-lg rounded-2xl border border-gray-700 bg-gray-900 p-4 shadow-2xl space-y-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+        <span className="text-sm font-bold text-amber-400">
+          {lang === 'so' ? 'دووبارە بڵاوکردنەوە بە وەرگرتن' : 'Ji nû ve biweşîne bi jêgirtin'}
+        </span>
+        <button
+          type="button"
+          onClick={() => setQuoteModalOpen(false)}
+          className="text-xs px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
+      <textarea
+        value={quoteDraft}
+        onChange={(e) => setQuoteDraft(e.target.value)}
+        rows={5}
+        maxLength={MAX_POST_LENGTH}
+        autoFocus
+        dir="auto"
+        className="w-full rounded-xl bg-gray-950 border border-gray-700 p-3 text-sm text-white focus:outline-none focus:border-amber-500"
+      />
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>{quoteDraft.length}/{MAX_POST_LENGTH}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setQuoteModalOpen(false)}
+            className="px-3 py-1.5 rounded-xl bg-gray-800 text-gray-300 hover:bg-gray-700 cursor-pointer"
+          >
+            {lang === 'so' ? 'پاشگەزبوونەوە' : 'Betal bike'}
+          </button>
+          <button
+            type="button"
+            disabled={quoteSubmitting || !quoteDraft.trim()}
+            onClick={() => {
+              const textToPublish = quoteDraft.trim();
+              if (!textToPublish) return;
+              setQuoteSubmitting(true);
+              const prevContent = content;
+              setContent(textToPublish);
+              const formEl = postTextareaRef.current?.closest("form") as HTMLFormElement | null;
+              if (formEl) {
+                formEl.requestSubmit();
+              }
+              setTimeout(() => {
+                setContent(prevContent);
+                setQuoteSubmitting(false);
+                setQuoteModalOpen(false);
+                setQuoteDraft("");
+              }, 350);
+            }}
+            className="px-4 py-1.5 rounded-xl bg-amber-500 font-semibold text-gray-950 hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
+          >
+            {quoteSubmitting ? "..." : (lang === 'so' ? 'بڵاوکردنەوە' : 'Weşandin')}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+</main>
   );
 }
