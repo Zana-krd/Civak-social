@@ -293,6 +293,22 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
   const [follows, setFollows] = useState<
     { follower_handle: string; following_handle: string; follower_id?: string; following_id?: string }[]
   >([]);
+  const [repostMenuPostId, setRepostMenuPostId] = useState<string | number | null>(null);
+
+  useEffect(() => {
+    if (repostMenuPostId === null) return;
+    const onOutside = (e: MouseEvent | TouchEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && el.closest('[data-no-open="true"]')) return;
+      setRepostMenuPostId(null);
+    };
+    document.addEventListener("mousedown", onOutside);
+    document.addEventListener("touchstart", onOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onOutside);
+      document.removeEventListener("touchstart", onOutside);
+    };
+  }, [repostMenuPostId]);
   const [followModalType, setFollowModalType] = useState<'followers' | 'following' | null>(
     null
   );
@@ -992,7 +1008,33 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
     } else {
       alert(dict.error + error.message);
     }
-  };
+  }
+
+  const handleQuote = (targetPost: any) => {
+    if (!targetPost) return;
+    setRepostMenuPostId(null);
+    const raw = String(targetPost.content_ku || targetPost.content || '').trim();
+    const withoutQuote = raw.replace(/^❝[\s\S]*?❞\s*(?:@[A-Za-z0-9_.-]+)?\s*/g, '').trim();
+    const clean = (withoutQuote || raw)
+      .split('\n')
+      .map((ln) => ln.trim())
+      .filter((ln) => ln && !ln.startsWith('🔁') && ln !== '❝' && ln !== '❞')
+      .join(' ')
+      .replace(/[❝❞]/g, '')
+      .trim();
+    const hRaw = String(targetPost.author_handle || targetPost.handle || targetPost.username || '').replace(/^@/, '').trim();
+    const formatted = `❝ ${clean} ❞${hRaw ? ` @${hRaw}` : ''}\n\n`;
+    setEmail((prev: any) => (String(prev || '').includes(formatted.trim()) ? String(prev) : formatted + String(prev || '').trimStart()));
+    setTimeout(() => {
+      if (postTextareaRef?.current) {
+        if (!postTextareaRef.current.value.includes(formatted.trim())) {
+          postTextareaRef.current.value = formatted + (postTextareaRef.current.value || '').trimStart();
+        }
+        postTextareaRef.current.focus();
+        postTextareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 30);
+  };;
 
   const handleAddComment = async (postId: number, e: React.FormEvent) => {
     e.preventDefault();
@@ -1548,9 +1590,10 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
                       )
                   ));
               return (
-                <button
+                                <div className="relative" data-no-open="true">
+                  <button
                   type="button"
-                  onClick={() => handleRepost(post)}
+                  onClick={(e) => { e.stopPropagation(); setRepostMenuPostId((prev) => (prev === post.id ? null : post.id)); }}
                   className={`flex items-center gap-1.5 transition ${
                     isRepostedByMe ? 'text-amber-400 font-semibold' : 'hover:text-amber-400'
                   }`}
@@ -1560,83 +1603,35 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
                   />
                   <span>{dict.repostBtn}</span>
                 </button>
+                  {repostMenuPostId === post.id && (
+                    <div className="absolute bottom-full mb-2 start-0 z-30 w-52 rounded-xl border border-gray-700 bg-gray-900/95 p-1.5 shadow-xl space-y-1">
+                      <button
+                        type="button"
+                        className="w-full rounded-lg px-3 py-2 text-start text-xs font-medium text-gray-100 hover:bg-gray-800 transition"
+                        onClick={(e) => { e.stopPropagation(); setRepostMenuPostId(null); handleRepost(post); }}>
+                        {dict.repostBtn}
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg px-3 py-2 text-start text-xs font-medium text-amber-300 hover:bg-gray-800 transition"
+                        onClick={(e) => { e.stopPropagation(); handleQuote(post); }}>
+                        {lang === 'so' ? 'دووبارە بڵاوکردنەوە بە وەرگرتنی دەق' : 'Ji nû ve biweşîne bi jêgirtin'}
+                      </button>
+                      {isRepostedByMe && (
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-3 py-2 text-start text-xs font-medium text-red-300 hover:bg-gray-800 transition"
+                          onClick={(e) => { e.stopPropagation(); setRepostMenuPostId(null); handleRepost(post); }}>
+                          {lang === 'so' ? 'هەڵوەشاندنەوەی دووبارە بڵاوکردنەوە' : 'Betalkirina ji nû ve weşandinê'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               );
             })()}
           </div>
-      {(() => {
-        const rawText = String((post as any).content_ku || post.content || "");
-        const qp =
-          (post as any).quoted_post ||
-          (post as any).quote_post ||
-          (post as any).quotedPost ||
-          (post as any).quote ||
-          null;
 
-        let qText =
-          (qp && (qp.content || qp.text || qp.body || qp.content_ku)) ||
-          (post as any).quote_content ||
-          (post as any).quoted_text ||
-          "";
-        let qAuthor =
-          (qp && (qp.author_name || qp.author || qp.name)) ||
-          (post as any).quote_author ||
-          (post as any).quoted_author ||
-          "";
-        let qHandleRaw =
-          (qp && (qp.author_handle || qp.handle || qp.username)) ||
-          (post as any).quote_handle ||
-          (post as any).quoted_handle ||
-          "";
-
-        if (!qText) {
-          const m = rawText.match(/❝([\s\S]*?)❞\s*(?:@([A-Za-z0-9_.-]+))?/);
-          if (m) {
-            qText = (m[1] || "").trim();
-            if (!qHandleRaw && m[2]) qHandleRaw = m[2].trim();
-          }
-        }
-
-        const qHandle = String(qHandleRaw || "").replace(/^@/, "");
-        if (!qText && !qHandle) return null;
-
-        return (
-          <div
-            data-no-open="true"
-            onClick={(e) => e.stopPropagation()}
-            className="mt-2.5 mb-1 rounded-xl border border-gray-800 bg-gray-950/65 p-3 space-y-1"
-          >
-            {qText && (
-              <p className="text-xs sm:text-sm text-gray-200 whitespace-pre-line break-words leading-relaxed">
-                <span className="text-amber-400 font-semibold mr-1">❝</span>
-                {String(qText)}
-                <span className="text-amber-400 font-semibold ml-1">❞</span>
-              </p>
-            )}
-            {(qHandle || qAuthor) && (
-              <div className="text-xs font-semibold text-amber-400" dir="ltr">
-                {qHandle ? `@${qHandle}` : qAuthor}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-      
-
-          
-          <button
-            type="button"
-            data-no-open="true"
-            aria-label="Quote"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (typeof handleRepost === "function") {
-                handleRepost(post);
-              }
-            }}
-            className="px-2.5 py-1 rounded-lg border border-gray-700/80 bg-gray-900/80 text-amber-400 hover:border-amber-400/60 transition text-xs font-bold leading-none"
-          >
-            ❝
-          </button>
           <button
             type="button"
             onClick={() => toggleBookmark(Number(post.id))}
@@ -2992,7 +2987,7 @@ aria-label={dict.searchPlaceholder}
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span className="font-semibold text-amber-400">@{post.author_handle}</span>
                         </div>
-                        <p className="text-sm text-gray-200 line-clamp-3">{String(post.content || "").replace(/❝[\s\S]*?❞\s*(?:@[A-Za-z0-9_.-]+)?/g, "").trim()}</p>
+                        <p className="text-sm text-gray-200 line-clamp-3">{post.content}</p>
                       </div>
                     ))
                   )}
