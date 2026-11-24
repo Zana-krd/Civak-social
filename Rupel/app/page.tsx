@@ -1508,7 +1508,7 @@ const handleRepost = async (post: any) => {
           <>
             {cleanPostBody && (
               <div>
-  )()}
+    )()
 </div>
             )}
             {(repostHandles.length > 0 || repostLines.length > 0) && (
