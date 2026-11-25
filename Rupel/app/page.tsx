@@ -1047,8 +1047,8 @@ const handleRepost = async (post: any) => {
     .trim();
   const hRaw = String(targetPost.author_handle || targetPost.handle || targetPost.username || "").replace(/^@/, "").trim();
   const formatted = `❝ ${clean} ${hRaw ? `@${hRaw}` : ""} ❞\n\n`;
-  setQuoteDraft(formatted);
-  setQuoteModalOpen(true);
+  setQuoteDraft('');
+  if (typeof window !== "undefined") { const cand: any = (typeof targetPost !== "undefined" ? targetPost : null)   || null; (window as any).__RUL_QUOTE_POST__ = cand; } setQuoteModalOpen(true);
 };
 
 
@@ -1166,20 +1166,25 @@ const handleRepost = async (post: any) => {
 };
 
 const handleSaveEditedPost = async (id: number) => {
-    if (!editingPostContent.trim() || editingPostContent.length > MAX_POST_LENGTH) return;
-    const { error } = await supabase
-      .from('posts')
-      .update({ content_ku: editingPostContent.trim() })
-      .eq('id', id);
-
-    if (!error) {
-      setEditingPostId(null);
-      setEditingPostContent(splitEditableQuote('').comment);
-      fetchPosts();
-    } else {
-      alert(dict.error + error.message);
-    }
-  };
+      const targetPost = posts.find((item: any) => String(item.id) === String(id));
+      const rawOrig = String(targetPost?.content_ku || targetPost?.content || "");
+      const qInfo = splitEditableQuote(rawOrig);
+      const finalEditedContent = qInfo.isQuoted
+        ? `${editingPostContent.trim()}❝${qInfo.quotedBody}${qInfo.quotedHandle ? ` @${qInfo.quotedHandle.replace(/^@/, "")}` : ""} ❞`.trim()
+        : editingPostContent.trim();
+      if (!finalEditedContent || finalEditedContent.length > MAX_POST_LENGTH) return;
+      const { error } = await supabase
+        .from('posts')
+        .update({ content_ku: finalEditedContent })
+        .eq('id', id);
+      if (!error) {
+        setEditingPostId(null);
+        setEditingPostContent('');
+        fetchPosts();
+      } else {
+        alert(dict.error + error.message);
+      }
+    };
 
   const handleLike = async (post: any) => {
     const id = post.id;
@@ -1544,15 +1549,15 @@ const handleSaveEditedPost = async (id: number) => {
             {renderContentWithTagsAndMentions(parsed.userComment)}
           </div>
         )}
-        <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
-          {parsed.quotedHandle && (
+        <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5 select-none">
+          <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
+            {renderContentWithTagsAndMentions(parsed.quotedBody)}
+          </div>
+              {parsed.quotedHandle && (
             <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
               <span>@{parsed.quotedHandle}</span>
             </div>
           )}
-          <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">
-            {renderContentWithTagsAndMentions(parsed.quotedBody)}
-          </div>
         </div>
       </div>
     );
@@ -1565,7 +1570,7 @@ const handleSaveEditedPost = async (id: number) => {
       "";
     const cleanHandle = rawHandle.replace(/^@/, "").trim();
     return (
-      <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5">
+      <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5 select-none">
         {cleanHandle && (
           <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
             <Repeat2 className="w-3.5 h-3.5 shrink-0" />
@@ -3126,6 +3131,21 @@ aria-label={dict.searchPlaceholder}
         dir="auto"
         className="w-full rounded-xl bg-gray-950 border border-gray-700 p-3 text-sm text-white focus:outline-none focus:border-amber-500"
       />
+        {(() => {
+          const tp: any = ((() => { const w: any = typeof window !== "undefined" ? window : {}; for (const k of ["__RUL_QUOTE_POST__", "quoteTargetPost", "quotingPost", "quotePost", "quotedPost", "selectedPost"]) { if (w[k]) return w[k]; } return null; })());
+          if (!tp) return null;
+          const rawQ = String(tp.content_ku || tp.content || "").trim();
+          const parsedQ = typeof renderEmbeddedPostCard === "function" ? renderEmbeddedPostCard(rawQ) : null;
+          const bodyQ = (parsedQ ? parsedQ.quotedBody : rawQ.replace(/^[❝“]|[❞”]s*$/g, "").replace(/@[A-Za-z0-9_.-]+s*$/g, "").trim()).replace(/[❝❞“”]/g, "").trim();
+          const handleQ = (parsedQ ? parsedQ.quotedHandle : ((rawQ.match(/@([A-Za-z0-9_.-]+)s*[❞”s]*$/) || [])[1] || String(tp.author_handle || tp.handle || tp.username || ""))).replace(/^@/, "").trim();
+          if (!bodyQ && !handleQ) return null;
+          return (
+            <div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5 select-none">
+              <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">{bodyQ}</div>
+              {handleQ && (<div className="text-xs font-semibold text-amber-400">@{handleQ}</div>)}
+            </div>
+          );
+        })()}
       <div className="flex items-center justify-between text-xs text-gray-400">
         <span>{quoteDraft.length}/{MAX_POST_LENGTH}</span>
         <div className="flex items-center gap-2">
@@ -3139,22 +3159,39 @@ aria-label={dict.searchPlaceholder}
           <button
             type="button"
             disabled={quoteSubmitting || !quoteDraft.trim()}
-            onClick={() => {
-              const textToPublish = quoteDraft.trim();
-              if (!textToPublish) return;
-              setQuoteSubmitting(true);
-              const prevContent = content;
-              setContent(textToPublish);
-              const formEl = postTextareaRef.current?.closest("form") as HTMLFormElement | null;
-              if (formEl) {
-                formEl.requestSubmit();
-              }
-              setTimeout(() => {
-                setContent(prevContent);
-                setQuoteSubmitting(false);
-                setQuoteModalOpen(false);
-                setQuoteDraft("");
-              }, 350);
+            onClick={async () => {
+              const commentText = quoteDraft.trim();
+                if (!commentText || quoteSubmitting) return;
+                setQuoteSubmitting(true);
+                try {
+                  const tp: any = ((() => { const w: any = typeof window !== "undefined" ? window : {}; for (const k of ["__RUL_QUOTE_POST__", "quoteTargetPost", "quotingPost", "quotePost", "quotedPost", "selectedPost"]) { if (w[k]) return w[k]; } return null; })());
+                  const rawQ = String(tp?.content_ku || tp?.content || "").trim();
+                  const parsedQ = typeof renderEmbeddedPostCard === "function" ? renderEmbeddedPostCard(rawQ) : null;
+                  const bodyQ = (parsedQ ? parsedQ.quotedBody : rawQ.replace(/^[❝“]|[❞”]s*$/g, "").replace(/@[A-Za-z0-9_.-]+s*$/g, "").trim()).replace(/[❝❞“”]/g, "").trim();
+                  const handleQ = (parsedQ ? parsedQ.quotedHandle : ((rawQ.match(/@([A-Za-z0-9_.-]+)s*[❞”s]*$/) || [])[1] || String(tp?.author_handle || tp?.handle || tp?.username || ""))).replace(/^@/, "").trim();
+                  const composed = rawQ
+                    ? `${commentText} ❝${bodyQ}${handleQ ? ` @${handleQ}` : ""} ❞`.trim()
+                    : commentText;
+                  if (composed.length > MAX_POST_LENGTH) return;
+                      const authorName = String((typeof profile !== "undefined" && (profile?.full_name || profile?.name || profile?.display_name || profile?.username)) || (typeof user !== "undefined" && (user?.user_metadata?.full_name || user?.user_metadata?.name || user?.user_metadata?.username || user?.email?.split("@")[0])) || "Zana").trim();
+                      const authorHandle = String((typeof profile !== "undefined" && (profile?.handle || profile?.username)) || (typeof user !== "undefined" && (user?.user_metadata?.handle || user?.user_metadata?.username || user?.email?.split("@")[0])) || "").replace(/^@/, "").trim();
+                      const payload: any = {
+                        content_ku: composed,
+                        author_name: authorName || "Zana",
+                      };
+                      if (authorHandle) payload.author_handle = authorHandle;
+                      if (typeof user !== "undefined" && user?.id) payload.user_id = user.id;
+                  const { error } = await supabase.from("posts").insert([payload]);
+                  if (error) {
+                    alert(dict.error + error.message);
+                  } else {
+                    setQuoteModalOpen(false);
+                    setQuoteDraft('');
+                    if (typeof fetchPosts === "function") await fetchPosts();
+                  }
+                } finally {
+                  setQuoteSubmitting(false);
+                }
             }}
             className="px-4 py-1.5 rounded-xl bg-amber-500 font-semibold text-gray-950 hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
           >
