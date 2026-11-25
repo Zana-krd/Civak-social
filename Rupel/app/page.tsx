@@ -968,14 +968,24 @@ const [likedPostIds, setLikedPostIds] = useState<number[]>([]);
 
   const renderEmbeddedPostCard = (rawText: string) => {
   if (!rawText) return null;
-  const match = rawText.match(/^\s*❝([\s\S]*?)❞\s*(?:@([A-Za-z0-9_.-]+))?\s*([\s\S]*)$/);
+  const mQuote = rawText.match(/^([\s\S]*?)\s*[❝“]([\s\S]*?)[❞”]\s*$/);
+  if (mQuote) {
+    const userComment = mQuote[1].trim();
+    const inner = mQuote[2].trim();
+    const mHandle = inner.match(/^(.*?)\s*@([A-Za-z0-9_.-]+)\s*$/);
+    const quotedHandle = mHandle ? mHandle[2].trim() : "";
+    const quotedBody = (mHandle ? mHandle[1] : inner).replace(/["❝❞“”]/g, "").trim();
+    if (quotedBody || quotedHandle) {
+      return { quotedBody, quotedHandle, userComment };
+    }
+  }
+  const match = rawText.match(/^\s*"([\s\S]*?)"\s*(?:@([A-Za-z0-9_.-]+))?\s*([\s\S]*)$/);
   if (!match) return null;
-  const quotedBody = match[1].replace(/[❝❞]/g, "").trim();
+  const quotedBody = match[1].replace(/["]/g, "").trim();
   const quotedHandle = (match[2] || "").trim();
   const userComment = (match[3] || "").trim();
   return { quotedBody, quotedHandle, userComment };
 };
-
 const handleRepost = async (post: any) => {
     if (!user) {
       setShowAuthModal(true);
@@ -1142,7 +1152,20 @@ const handleRepost = async (post: any) => {
     }
   };
 
-  const handleSaveEditedPost = async (id: number) => {
+  const splitEditableQuote = (raw: string) => {
+  const str = String(raw || "");
+  const parsed = renderEmbeddedPostCard(str);
+  if (parsed && (parsed.quotedBody || parsed.quotedHandle)) {
+    return { isQuoted: true, comment: parsed.userComment || "", quotedHandle: parsed.quotedHandle || "", quotedBody: parsed.quotedBody || "" };
+  }
+  const m = str.match(/^([\s\S]*?)\s*[❝“]([\s\S]*?)@([A-Za-z0-9_.-]+)\s*[❞”]\s*$/);
+  if (m) {
+    return { isQuoted: true, comment: m[1].trim(), quotedHandle: m[3].trim(), quotedBody: m[2].replace(/["❝❞“”]/g, "").trim() };
+  }
+  return { isQuoted: false, comment: str, quotedHandle: "", quotedBody: "" };
+};
+
+const handleSaveEditedPost = async (id: number) => {
     if (!editingPostContent.trim() || editingPostContent.length > MAX_POST_LENGTH) return;
     const { error } = await supabase
       .from('posts')
@@ -1151,7 +1174,7 @@ const handleRepost = async (post: any) => {
 
     if (!error) {
       setEditingPostId(null);
-      setEditingPostContent('');
+      setEditingPostContent(splitEditableQuote('').comment);
       fetchPosts();
     } else {
       alert(dict.error + error.message);
@@ -1452,7 +1475,7 @@ const handleRepost = async (post: any) => {
                   type="button"
                   onClick={() => {
                     setEditingPostId(post.id);
-                    setEditingPostContent(postBody);
+                    setEditingPostContent(splitEditableQuote(postBody).comment);
                   }}
                   className="p-1 text-gray-400 hover:text-amber-400 rounded-lg hover:bg-gray-800 transition"
                   aria-label="Edit"
@@ -1482,12 +1505,16 @@ const handleRepost = async (post: any) => {
               className="w-full bg-gray-950 border border-gray-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
               dir="auto"
             />
+                      {(() => { const qInfo = splitEditableQuote(String(post?.content_ku || post?.content || "")); if (!qInfo.isQuoted) return null; return (<div className="rounded-xl border border-gray-700/80 bg-gray-900/75 p-3 space-y-1.5 select-none">
+                            <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap" dir="auto">{qInfo.quotedBody}</div>
+                            {qInfo.quotedHandle && (<div className="text-xs font-semibold text-amber-400">@{qInfo.quotedHandle}</div>)}
+                          </div>); })()}
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setEditingPostId(null);
-                  setEditingPostContent('');
+                  setEditingPostContent(splitEditableQuote('').comment);
                 }}
                 className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 rounded-lg transition"
               >
