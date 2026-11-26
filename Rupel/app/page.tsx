@@ -249,8 +249,22 @@ export default function Home() {
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [lang, setLang] = useState<'ku' | 'so'>('ku');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-
-  useEffect(() => {
+  const getNotifClearKey = (u: any) => {
+    const id = u?.id || u?.handle || u?.username || u?.email || "guest";
+    return "rupel_cleared_notif_" + String(id);
+  };
+  const [clearedNotifCount, setClearedNotifCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    try {
+      const keys = Object.keys(window.localStorage).filter((k) => k.startsWith("rupel_cleared_notif_"));
+      if (keys.length === 0) return 0;
+      const val = Number(window.localStorage.getItem(keys[0]));
+      return Number.isFinite(val) && val >= 0 ? val : 0;
+    } catch {
+      return 0;
+    }
+  });
+useEffect(() => {
     let saved: string | null = null;
     try {
       saved = window.localStorage.getItem('rupel_theme');
@@ -1404,8 +1418,8 @@ const handleSaveEditedPost = async (id: number) => {
   const myNotifications = user
     ? notifications.filter((n) => normHandle(n.targetHandle) === normHandle(myHandle))
     : [];
-
-  const renderPostCard = (post: any) => {
+  const unreadNotifCount = Math.max(0, myNotifications.length - clearedNotifCount);
+const renderPostCard = (post: any) => {
     const postBody = post.content_ku || post.content || '';
     const repostLines: string[] = [];
     const repostHandles: string[] = [];
@@ -2925,7 +2939,7 @@ aria-label={dict.searchPlaceholder}
         className="fixed bottom-0 inset-x-0 z-40 bg-gray-900/95 backdrop-blur border-t border-gray-800"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-2xl mx-auto grid grid-cols-4 items-center h-14 px-2">
+        <div className="max-w-2xl mx-auto grid grid-cols-3 items-center h-14 px-2">
           <button
             type="button"
             onClick={() => {
@@ -2933,15 +2947,16 @@ aria-label={dict.searchPlaceholder}
                 setShowAuthModal(true);
                 return;
               }
+              (() => { const nextCleared = myNotifications.length; setClearedNotifCount(nextCleared); if (typeof window !== "undefined") { try { window.localStorage.setItem(getNotifClearKey(user), String(nextCleared)); } catch {} } })()
               setShowNotificationsModal(true);
             }}
-            className="relative flex flex-col items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
+            className="relative flex flex-col w-full items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
           >
             <span className="relative inline-flex items-center justify-center text-base">
               🔔
-              {user && myNotifications.length > 0 && (
+              {user && unreadNotifCount > 0 && (
                 <span className="ms-1 px-1.5 py-0.2 bg-amber-400 text-gray-950 rounded-full text-[10px] font-bold">
-                  {myNotifications.length}
+                  {unreadNotifCount}
                 </span>
               )}
             </span>
@@ -2955,7 +2970,7 @@ aria-label={dict.searchPlaceholder}
               setActiveSection('feed');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center gap-0.5 py-1 transition ${
+            className={`flex flex-col w-full items-center justify-center gap-0.5 py-1 transition ${
               activeSection === 'feed' && !viewedAuthor ? 'text-amber-400' : 'text-gray-400 hover:text-amber-400'
             }`}
           >
@@ -2966,26 +2981,12 @@ aria-label={dict.searchPlaceholder}
           <button
             type="button"
             onClick={() => setShowSuggestedModal(true)}
-            className="flex flex-col items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
+            className="flex flex-col w-full items-center justify-center gap-0.5 py-1 text-gray-400 hover:text-amber-400 transition"
           >
             <span className="text-base">👥</span>
             <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.exploreNav}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setViewedAuthor(null);
-              setActiveSection('settings');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className={`flex flex-col items-center justify-center gap-0.5 py-1 transition ${
-              activeSection === 'settings' ? 'text-amber-400' : 'text-gray-400 hover:text-amber-400'
-            }`}
-          >
-            <span className="text-base">⚙️</span>
-            <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.settingsNav}</span>
-          </button>
         </div>
       </nav>
 
@@ -3278,4 +3279,10 @@ aria-label={dict.searchPlaceholder}
 </main>
   );
 }
+
+
+
+
+
+
 
