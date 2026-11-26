@@ -248,7 +248,7 @@ export default function Home() {
   const [quoteDraft, setQuoteDraft] = useState("");
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [lang, setLang] = useState<'ku' | 'so'>('ku');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const getNotifClearKey = (u: any) => {
     const id = u?.id || u?.handle || u?.username || u?.email || "guest";
     return "rupel_cleared_notif_" + String(id);
