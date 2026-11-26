@@ -2,6 +2,7 @@
 
 import { Fragment, useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import './rupel-theme.css';
 import SuggestedUsersCard from './SuggestedUsersCard';
 import {
   Heart,
@@ -26,6 +27,8 @@ import {
   Users,
   SquarePen,
   Compass,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 const supabase = createClient(
@@ -69,7 +72,7 @@ const t = {
     settingsNav: 'Mîheng',
     allTab: 'Hemû',
     followingTab: 'Şopandî',
-    placeholder: 'Çi di mejiyê te de ye? Li vir binivîse... (mînak: #werzîş @zana)',
+    placeholder: 'Çi di mejiyê te de ye? Li vir binivîse... (mînak: #werzîş @rupel)',
     imagePlaceholder: 'Lînka wêneyî (Image URL - opsiyonel)...',
     searchPlaceholder: 'Li post, @nav an #etîketan bigere...',
     publish: 'Weşandin',
@@ -111,6 +114,10 @@ const t = {
     settingsTitle: 'Mîheng',
     interfaceLangLabel: 'Zimanê Rûpelê',
     interfaceLangDesc: 'Kurmancî (Sereke) / Soranî (Tê tomarkirin)',
+    themeLabel: 'Dîmen',
+    themeDesc: 'Moda tarî / ronî',
+    themeLight: 'Moda ronî',
+    themeDark: 'Moda tarî',
     defaultUser: 'Bikarhêner',
     followBtn: 'Bişopîne',
     followingBtn: 'Tê şopandin',
@@ -144,7 +151,7 @@ const t = {
     settingsNav: 'ڕێکخستنەکان',
     allTab: 'هەمووی',
     followingTab: 'شوێنکەوتووەکان',
-    placeholder: 'چی لە مێشکتدایە؟ لێرە بنووسە... (بۆ نموونە: #werzîş @zana)',
+    placeholder: 'چی لە مێشکتدایە؟ لێرە بنووسە... (بۆ نموونە: #werzîş @rupel)',
     imagePlaceholder: 'بەستەری وێنە (Image URL - ئارەزوومەندانە)...',
     searchPlaceholder: 'گەڕان لە بابەت، @ناو یان #هاشتاگەکان...',
     publish: 'بڵاوکردنەوە',
@@ -186,6 +193,10 @@ const t = {
     settingsTitle: 'ڕێکخستنەکان',
     interfaceLangLabel: 'زمانی ڕووکار',
     interfaceLangDesc: 'کورمانجی (سەرەکی) / سۆرانی (پاشەکەوت دەکرێت)',
+    themeLabel: 'ڕەنگی ڕووکار',
+    themeDesc: 'تاریک / ڕووناک',
+    themeLight: 'ڕووناک',
+    themeDark: 'تاریک',
     defaultUser: 'بەکارهێنەر',
     followBtn: 'شوێنکەوتن',
     followingBtn: 'شوێنکەوتوو',
@@ -237,6 +248,29 @@ export default function Home() {
   const [quoteDraft, setQuoteDraft] = useState("");
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [lang, setLang] = useState<'ku' | 'so'>('ku');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem('rupel_theme');
+    } catch {
+      // Ignore storage access issues
+    }
+    const initial = saved === 'light' ? 'light' : 'dark';
+    setTheme(initial);
+    document.documentElement.setAttribute('data-theme', initial);
+  }, []);
+
+  const applyTheme = (next: 'dark' | 'light') => {
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+      window.localStorage.setItem('rupel_theme', next);
+    } catch {
+      // Ignore storage errors
+    }
+  };
   const [user, setUser] = useState<any>(null);
 
   const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2858,6 +2892,29 @@ aria-label={dict.searchPlaceholder}
                 <span>{dict.switchLang}</span>
               </button>
             </div>
+            <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+              <div>
+                <p className="text-sm font-medium text-white">
+                  {dict.themeLabel}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {dict.themeDesc}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => applyTheme(theme === 'dark' ? 'light' : 'dark')}
+                aria-pressed={theme === 'light'}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-amber-400 rounded-xl transition"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-3.5 h-3.5" />
+                ) : (
+                  <Moon className="w-3.5 h-3.5" />
+                )}
+                <span>{theme === 'dark' ? dict.themeLight : dict.themeDark}</span>
+              </button>
+            </div>
           </section>
         )}
       </div>
@@ -2868,7 +2925,7 @@ aria-label={dict.searchPlaceholder}
         className="fixed bottom-0 inset-x-0 z-40 bg-gray-900/95 backdrop-blur border-t border-gray-800"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-2xl mx-auto grid grid-cols-3 items-center h-14 px-2">
+        <div className="max-w-2xl mx-auto grid grid-cols-4 items-center h-14 px-2">
           <button
             type="button"
             onClick={() => {
@@ -2913,6 +2970,21 @@ aria-label={dict.searchPlaceholder}
           >
             <span className="text-base">👥</span>
             <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.exploreNav}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setViewedAuthor(null);
+              setActiveSection('settings');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center gap-0.5 py-1 transition ${
+              activeSection === 'settings' ? 'text-amber-400' : 'text-gray-400 hover:text-amber-400'
+            }`}
+          >
+            <span className="text-base">⚙️</span>
+            <span className="text-[11px] font-medium truncate max-w-[92px]">{dict.settingsNav}</span>
           </button>
         </div>
       </nav>
@@ -3206,3 +3278,4 @@ aria-label={dict.searchPlaceholder}
 </main>
   );
 }
+
